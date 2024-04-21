@@ -22,7 +22,7 @@ jobs:
       - name: git checkout
         uses: actions/checkout@v4
       - name: Run misspell with reviewdog
-        uses: reviewdog/action-misspell@v1.13.1
+        uses: reviewdog/action-misspell@v1
         with:
           # GITHUB_TOKEN.
           github_token: ${{ github.token }}
