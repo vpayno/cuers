@@ -3,6 +3,7 @@
 # .gitlab-ci.yml
 #
 stages:
+  - lint
   - test
   - build
   - publish
@@ -21,12 +22,22 @@ cache:  # Setup a cache to cache job parts between jobs to ensure faster builds
     - $HOME/.cargo/
     - target/
 
-tests-and-coverage:
-  stage: test
+.rust_job_template:
   image: rust
-  allow_failure: true
-  script:
+  allow_failure: false
+  rules:
+    - changes:
+        - ./Cargo.toml
+        - ./Cargo.lock
+        - ./src
+        - ./tests
+  before_script:
     - rustc --version && cargo --version
+
+rust-tests-and-coverage:
+  extends: .rust_job_template
+  stage: test
+  script:
     - apt update
     - apt install -y lcov  # --install-suggests
     - cargo install --locked cargo-llvm-cov
@@ -51,51 +62,55 @@ tests-and-coverage:
         coverage_format: cobertura
         path: coverage.xml
 
-lint-code:
-  stage: test
-  image: rust
-  allow_failure: true
+rust-lint-code:
+  extends: .rust_job_template
+  stage: lint
   script:
     - rustup component add clippy
     - cargo clippy --future-incompat-report -- -D warnings
 
-audit-code:
+rust-audit-code:
+  extends: .rust_job_template
   stage: test
-  image: rust
+  dependencies:
+    - rust-lint-code
   allow_failure: true
   script:
     - cargo install --locked cargo-audit
     - cargo audit
 
-format-code:
-  stage: test
-  image: rust
+rust-format-code:
+  extends: .rust_job_template
+  stage: lint
   allow_failure: true
   script:
     - rustup component add rustfmt
     - cargo fmt -- --check
 
-spellcheck:
-  stage: test
-  image: rust
-  allow_failure: true
+rust-spellcheck:
+  extends: .rust_job_template
+  stage: lint
+  dependencies:
+    - rust-lint-code
   script:
     - apt update
     - apt install -y llvm clang clang libclang-dev build-essential libssl-dev
     - LIBCLANG_PATH="$(llvm-config --prefix)/lib" cargo install --locked cargo-spellcheck
     - cargo spellcheck check
 
-outdated:
+rust-outdated:
+  extends: .rust_job_template
   stage: test
-  image: rust
   allow_failure: true
   script:
     - cargo install --locked cargo-outdated
     - cargo outdated
 
-build:amd64:
+rust-build:amd64:
+  extends: .rust_job_template
   stage: build
-  image: rust
+  dependencies:
+    - rust-tests-and-coverage
   script:
     - cargo build --release
   artifacts:
@@ -103,8 +118,8 @@ build:amd64:
       - target/release/web-project
 
 rustdoc:
+  extends: .rust_job_template
   stage: build
-  image: rust
   script:
     - cargo doc
   artifacts:
@@ -115,7 +130,7 @@ pages:
   stage: publish
   image: alpine
   dependencies:
-    - build:amd64
+    - rust-build:amd64
     - rustdoc
   script:
     - mkdir -pv public
